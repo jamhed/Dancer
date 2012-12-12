@@ -69,7 +69,7 @@ sub format_message {
     $level = sprintf('%5s', $level);
 
     my $r     = Dancer::SharedData->request;
-    my @stack = caller(3);
+    my @stack = caller(4);
 
     my $block_handler = sub {
         my ( $block, $type ) = @_;
