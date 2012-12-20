@@ -51,7 +51,7 @@ sub write {
     my ($class, $key, $value) = @_;
 
     return unless $key;
-    # $key eq 'id' and croak 'Can\'t store to session key with name "id"';
+    $key eq 'id' and croak 'Can\'t store to session key with name "id"';
 
     my $session = get_current_session();
     $session->{$key} = $value;
