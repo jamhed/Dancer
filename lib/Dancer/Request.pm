@@ -72,6 +72,7 @@ sub scheme                {
     if (setting('behind_proxy')) {
         $scheme = $_[0]->env->{'X_FORWARDED_PROTOCOL'}
                || $_[0]->env->{'HTTP_X_FORWARDED_PROTOCOL'}
+               || $_[0]->env->{'HTTP_X_FORWARDED_PROTO'}
                || $_[0]->env->{'HTTP_FORWARDED_PROTO'}
                || ""
     }
@@ -138,16 +139,21 @@ sub to_string {
 # helper for building a request object by hand
 # with the given method, path, params, body and headers.
 sub new_for_request {
-    my ($class, $method, $uri, $params, $body, $headers) = @_;
-    $params ||= {};
+    my ($class, $method, $uri, $params, $body, $headers, $extra_env) = @_;
+    $params    ||= {};
+    $extra_env ||= {};
     $method = uc($method);
 
     my ( $path, $query_string ) = ( $uri =~ /([^?]*)(?:\?(.*))?/s ); #from HTTP::Server::Simple
 
-    my $req = $class->new(env => { %ENV,
-                                    PATH_INFO      => $path,
-                                    QUERY_STRING   => $query_string || $ENV{QUERY_STRING} || '',
-                                    REQUEST_METHOD => $method});
+    my $env = {
+        %ENV,
+        %{$extra_env},
+        PATH_INFO      => $path,
+        QUERY_STRING   => $query_string || $ENV{QUERY_STRING} || '',
+        REQUEST_METHOD => $method
+    };
+    my $req = $class->new(env => $env);
     $req->{params}        = {%{$req->{params}}, %{$params}};
     $req->_build_params();
     $req->{_query_params} = $req->{params};
@@ -849,6 +855,21 @@ in @uploads, being the ARRAY ref:
 
 That is why this accessor should be used instead of a manual access to
 C<uploads>.
+
+=head1 Values
+
+Given a request to http://perldancer.org:5000/request-methods?a=1 these are
+the values returned by the various request->  method calls:
+
+  base         http://perldancer.org:5000/
+  uri_base     http://perldancer.org:5000
+  uri          /request-methods?a=1
+  request_uri  /request-methods?a=1
+  path         /request-methods
+  method       GET
+  port         5000
+  protocol     HTTP/1.1
+  scheme       http
 
 =head1 HTTP environment variables
 

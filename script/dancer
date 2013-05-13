@@ -35,7 +35,8 @@ my $PERL_INTERPRETER = -r '/usr/bin/env' ? '#!/usr/bin/env perl' : "#!$^X";
 
 pod2usage( -verbose => 1 ) if $help;
 pod2usage( -verbose => 1 ) if not defined $name;
-pod2usage( -verbose => 1 ) unless -d $path && -w $path;
+pod2usage( -verbose => 1, -msg => "directory '$path' does not exist" )  unless -d $path;
+pod2usage( -verbose => 1, -msg => "directory '$path' is not writable" ) unless -w $path;
 sub version {require Dancer; print 'Dancer ' . $Dancer::VERSION . "\n"; exit 0;}
 
 validate_app_name($name);
@@ -75,12 +76,16 @@ NOYAML
 
 sub validate_app_name {
     my $name = shift;
-    if ($name =~ /[^\w:]/ || $name =~ /^\d/ || $name =~ /\b:\b|:{3,}/) {
-        print STDERR "Error: Invalid application name.\n";
-        print STDERR "Application names must not contain single colons,"
-            ." dots, hyphens or start with a number.\n";
-        exit;
-    }
+
+    return unless $name =~ /[^\w:]/ 
+               or $name =~ /^\d/ 
+               or $name =~ /\b:\b|:{3,}/;
+
+    die <<"END_DIE" 
+Error: Invalid application name '$name'
+Application names must not contain single colons, dots, hyphens or start with a number.
+END_DIE
+
 }
 
 sub get_application_path {
@@ -323,12 +328,17 @@ sub templates($) {
 use warnings;
 use ExtUtils::MakeMaker;
 
+# Normalize version strings like 6.30_02 to 6.3002,
+# so that we can do numerical comparisons on it.
+my \$eumm_version = \$ExtUtils::MakeMaker::VERSION;
+\$eumm_version =~ s/_//;
+
 WriteMakefile(
     NAME                => '$appname',
     AUTHOR              => q{YOUR NAME <youremail\@example.com>},
     VERSION_FROM        => 'lib/$appfile.pm',
     ABSTRACT            => 'YOUR APPLICATION ABSTRACT',
-    (\$ExtUtils::MakeMaker::VERSION >= 6.3002
+    (\$eumm_version >= 6.3001
       ? ('LICENSE'=> 'perl')
       : ()),
     PL_FILES            => {},

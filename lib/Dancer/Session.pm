@@ -57,7 +57,7 @@ sub write {
     $session->{$key} = $value;
 
     # TODO : should be moved as an "after" filter
-    $session->flush;
+    $session->flush unless $session->is_lazy;
     return $value;
 }
 
@@ -128,7 +128,7 @@ and C</home> actions using the session engine.
         # /login
         if (not session('user_id')) {
             redirect '/login';
-        a
+        }
     };
 
 Of course, you probably don't want to have to duplicate the code to check

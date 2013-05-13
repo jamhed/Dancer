@@ -5,7 +5,7 @@ use warnings;
 use Carp;
 use Cwd 'realpath';
 
-our $VERSION   = '1.3110';
+our $VERSION   = '1.3113';
 our $AUTHORITY = 'SUKRIA';
 
 $VERSION = eval $VERSION;
@@ -228,6 +228,7 @@ sub import {
     my ($package, $script) = caller;
 
     strict->import;
+    warnings->import;
     utf8->import;
 
     my @final_args;
@@ -328,7 +329,7 @@ sub _init_script_dir {
     Dancer::Logger::core("initializing appdir to: `$appdir'");
 
     Dancer::setting(confdir => $ENV{DANCER_CONFDIR}
-      || $appdir);
+      || $appdir) unless Dancer::setting('confdir');
 
     Dancer::setting(public => $ENV{DANCER_PUBLIC}
       || Dancer::FileUtils::path($appdir, 'public'));
@@ -404,55 +405,59 @@ sub _send_file {
         }
     }
 
-    if (exists($options{filename})) {
-        $resp->push_header('Content-Disposition' => 
-            "attachment; filename=\"$options{filename}\""
-        );
-    }
+    if ($resp) {
 
-    if ( $options{'streaming'} ) {
-        # handle streaming
-        $resp->streamed( sub {
-            my ( $status, $headers ) = @_;
-            my %callbacks = defined $options{'callbacks'} ?
-                            %{ $options{'callbacks'} }    :
-                            ();
+        if (exists($options{filename})) {
+            $resp->push_header('Content-Disposition' => 
+                "attachment; filename=\"$options{filename}\""
+            );
+        }
 
-            return sub {
-                my $respond = shift;
-                exists $callbacks{'override'}
-                    and return $callbacks{'override'}->( $respond, $resp );
+        if ( $options{'streaming'} ) {
+            # handle streaming
+            $resp->streamed( sub {
+                my ( $status, $headers ) = @_;
+                my %callbacks = defined $options{'callbacks'} ?
+                                %{ $options{'callbacks'} }    :
+                                ();
 
-                # get respond callback and set headers, get writer in return
-                my $writer = $respond->( [
-                    $status,
-                    $headers,
-                ] );
+                return sub {
+                    my $respond = shift;
+                    exists $callbacks{'override'}
+                        and return $callbacks{'override'}->( $respond, $resp );
 
-                # get content from original response
-                my $content = $resp->content;
+                    # get respond callback and set headers, get writer in return
+                    my $writer = $respond->( [
+                        $status,
+                        $headers,
+                    ] );
 
-                exists $callbacks{'around'}
-                    and return $callbacks{'around'}->( $writer, $content );
+                    # get content from original response
+                    my $content = $resp->content;
 
-                if ( ref $content ) {
-                    my $bytes = $options{'bytes'} || '43008'; # 42K (dams)
-                    my $buf;
-                    while ( ( my $read = sysread $content, $buf, $bytes ) != 0 ) {
-                        if ( exists $callbacks{'around_content'} ) {
-                            $callbacks{'around_content'}->( $writer, $buf );
-                        } else {
-                            $writer->write($buf);
+                    exists $callbacks{'around'}
+                        and return $callbacks{'around'}->( $writer, $content );
+
+                    if ( ref $content ) {
+                        my $bytes = $options{'bytes'} || '43008'; # 42K (dams)
+                        my $buf;
+                        while ( ( my $read = sysread $content, $buf, $bytes ) != 0 ) {
+                            if ( exists $callbacks{'around_content'} ) {
+                                $callbacks{'around_content'}->( $writer, $buf );
+                            } else {
+                                $writer->write($buf);
+                            }
                         }
+                    } else {
+                        $writer->write($content);
                     }
-                } else {
-                    $writer->write($content);
-                }
-            };
-        } );
-    }
+                };
+            } );
+        }
 
-    return $resp if $resp;
+        return $resp;
+
+    }
 
     Dancer::Error->new(
         code    => 404,
@@ -467,6 +472,10 @@ sub _start {
 
     # Backward compatibility for app.psgi that has sub { Dancer->dance($req) }
     if ($request) {
+        Dancer::Handler->init_request_headers( $request->env );
+        # TODO _build_headers should either not be private, or we should call
+        # init
+        $request->_build_headers;
         return Dancer::Handler->handle_request($request);
     }
 
@@ -897,7 +906,8 @@ Adds a hook at some position. For example :
   };
 
 There can be multiple hooks assigned to a given position, and each will be
-executed in order.
+executed in order. Note that B<all> hooks are always called, even if they
+are defined in a different package loaded via C<load_app>.
 
 (For details on how to register new hooks from within plugins, see
 L<Dancer::Hook>.)
@@ -1052,7 +1062,7 @@ if it needs to make changes to the response which is about to be sent.
     my $response = shift;
   };
 
-This is equivalent to
+This is equivalent to the deprecated
 
   after sub {
     my $response = shift;
@@ -1074,6 +1084,16 @@ argument a L<Dancer::Exception> object.
 
   hook on_handler_exception => sub {
     my $exception = shift;
+  };
+
+=item on_reset_state
+
+This hook is called when global state is reset to process a new request.
+It receives a boolean value that indicates whether the reset was called
+as part of a forwarded request.
+
+  hook on_reset_state => sub {
+    my $is_forward = shift;
   };
 
 =item on_route_exception
